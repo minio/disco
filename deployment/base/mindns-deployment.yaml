@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disco
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: disco
+  template:
+    metadata:
+      labels:
+        app: disco
+    spec:
+      serviceAccountName: disco-sa
+      containers:
+        - name: disco
+          image: dvaldivia/disco:latest
+          imagePullPolicy: "IfNotPresent"
+          args:
+            - /disco
+            - server
+          ports:
+            - containerPort: 53
+              protocol: UDP
+              name: dns
+            - containerPort: 53
+              protocol: TCP
+              name: dns-tcp
+            - containerPort: 8080
+              name: http
