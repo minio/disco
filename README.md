@@ -108,4 +108,8 @@ data:
         forward . 10.109.234.52
     }
 ```
+Afterwards, restart the coredns pods on the `kube-system` namespace
+```bash
+$ kubectl -n kube-system delete pod $(kubectl -n kube-system get pods  | grep coredns | awk '{print $1}')
+```
 
