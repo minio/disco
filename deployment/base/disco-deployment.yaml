@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: disco
+  name: minio-disco
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: disco
+      app: minio-disco
   template:
     metadata:
       labels:
-        app: disco
+        app: minio-disco
     spec:
-      serviceAccountName: disco-sa
+      serviceAccountName: minio-disco-sa
       containers:
-        - name: disco
+        - name: minio-disco
           image: dvaldivia/disco:latest
-          imagePullPolicy: "IfNotPresent"
+          imagePullPolicy: "Always"
           args:
             - /disco
             - server
@@ -27,5 +27,3 @@ spec:
             - containerPort: 53
               protocol: TCP
               name: dns-tcp
-            - containerPort: 8080
-              name: http

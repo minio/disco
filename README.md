@@ -1,6 +1,6 @@
 Disco
 =====
-Disco discovery service for MinIO.
+Disco is a service discovery for MinIO.
 
 The motivation is that some stateful services have the need for a static IP address to discover peers it's peers, Kubernetes offers this functionality however `kube-dns` has a large delay in announcing the new Pods, therefore we propose this layer to act immediately upon the creation of the desired pod.
 
@@ -49,4 +49,63 @@ You can deploy with [kustomize](https://github.com/kubernetes-sigs/kustomize)
 kustomize build deployment/base | kubectl apply -f -
 ```
 
+After deploying `disco` you should find out the IP for the `minio-disco` service since that is going to be used to configure the top level `minio.local` domain.
+
+```bash
+$ kubectl get svc minio-disco -o wide
+NAME          TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE   SELECTOR
+minio-disco   ClusterIP   10.109.234.52   <none>        53/UDP,53/TCP   12m   app=minio-disco
+
+```
+
+Here we can see the IP is `10.109.234.52` so we are going to add that to the `Corefile` stored in the `coredns` configmap inside the `kube-system` namespace.
+
+```bash
+$ kubectl -n kube-system edit configmap corends
+```
+
+and add at the end of `Corefile`
+
+```yaml
+    minio.local:53 {
+        errors
+        cache 30
+        forward . 10.109.234.52
+    }
+```
+
+The file should look like this
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+    minio.local:53 {
+        errors
+        cache 30
+        forward . 10.109.234.52
+    }
+```
 

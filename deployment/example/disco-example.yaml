@@ -17,17 +17,12 @@ spec:
         app: minio
         controller: disco-example
       annotations:
-        io.min.disco: '{.metadata.name}.{.metadata.labels.controller}'
+        io.min.disco: '{.metadata.name}.{.metadata.labels.controller}.minio.local'
     spec:
-      dnsPolicy: "None"
-      dnsConfig:
-        nameservers:
-#          - <DISCO IP>, # this line intentionally breaks your `kubectl apply -f` so you can fix this, get the disco service IP and replace it here
       containers:
         - args:
             - server
-            - http://disco-example-{0...3}.disco-example/data{1...4}
-          #        - http://disco-example-{0...3}.disco-example.disco-example.default.svc.cluster.local/data{1...4}
+            - http://disco-example-{0...3}.disco-example.minio.local/data{1...4}
           env:
             - name: MINIO_ACCESS_KEY
               value: minio

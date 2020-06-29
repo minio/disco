@@ -61,12 +61,8 @@ func parseDNSQuery(m *dns.Msg) {
 				}
 				log.Printf("Query for %s ✔\n", q.Name)
 			} else {
-				a, err := dig.A(q.Name)
-				if err != nil || len(a) == 0 {
-					log.Printf("DIG ERROR for %s ❌\n", q.Name)
-				} else {
-					fmt.Println(a)
-					//rr, err := dns.NewRR(fmt.Sprintf("%s 5 A %s", q.Name, a[0].A))
+				a, _ := dig.A(q.Name)
+				if len(a) > 0 {
 					rr, err := dns.NewRR(a[0].String())
 					if err == nil {
 						m.Answer = append(m.Answer, rr)
