@@ -42,7 +42,7 @@ import (
 // storage of the records the DNS will server
 var records = map[string]string{
 	// this is a domain to validate the presence of Disco
-	"probe.minio.local": "0.0.0.0",
+	"probe.minio.local.": "0.0.0.0",
 }
 
 // pod label
