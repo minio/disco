@@ -14,14 +14,4 @@ WORKDIR /go/src/github.com/minio/disco/
 
 ENV CGO_ENABLED=0
 
-
 RUN go build -ldflags "-w -s" -a -o disco .
-
-FROM scratch
-MAINTAINER MinIO Development "dev@min.io"
-EXPOSE 53
-
-COPY --from=0 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=0 /go/src/github.com/minio/disco/disco .
-
-CMD ["/disco"]

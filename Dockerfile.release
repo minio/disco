@@ -1,0 +1,8 @@
+FROM scratch
+MAINTAINER MinIO Development "dev@min.io"
+EXPOSE 53
+
+COPY ca-certificates.crt /etc/ssl/certs/
+COPY disco /disco
+
+ENTRYPOINT ["/disco"]
