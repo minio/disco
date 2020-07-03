@@ -22,7 +22,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - "-s -w"
+      - "-s -w -X main.version={{ .Version }}"
 
 archives:
   - format: binary
@@ -35,8 +35,6 @@ dockers:
     goos: linux
     goarch: amd64
     dockerfile: Dockerfile.release
-    extra_files:
-      - ca-certificates.crt
     image_templates:
       - minio/disco:{{ .Tag }}
       - minio/disco:latest

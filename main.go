@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"regexp"
 	"strings"
@@ -39,14 +40,17 @@ import (
 	"k8s.io/client-go/util/jsonpath"
 )
 
+// version disco version string set with -X main.version=1.0.0
+var version string
+
 // storage of the records the DNS will server
 var records = map[string]string{
 	// this is a domain to validate the presence of Disco
 	"probe.minio.local.": "0.0.0.0",
 }
 
-// pod label
-const DnsPodLabel = "io.min.disco"
+// DNSPodLabel pod label
+const DNSPodLabel = "io.min.disco"
 
 // dig instance
 var dig dnsutil.Dig
@@ -77,7 +81,7 @@ func parseDNSQuery(m *dns.Msg) {
 	}
 }
 
-func handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
+func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Compress = false
@@ -103,7 +107,7 @@ func watchPods(clientSet *kubernetes.Clientset) {
 			pod := obj.(*v1.Pod)
 			// monitor for pods with io.min.disco annotation
 			if pod.Status.PodIP != "" {
-				if labelQuery, ok := pod.ObjectMeta.Annotations[DnsPodLabel]; ok {
+				if labelQuery, ok := pod.ObjectMeta.Annotations[DNSPodLabel]; ok {
 					domain := parseAnnotation(labelQuery, pod)
 					log.Printf("ADD %s (%s)", domain, pod.Status.PodIP)
 					records[domain] = pod.Status.PodIP
@@ -114,7 +118,7 @@ func watchPods(clientSet *kubernetes.Clientset) {
 			pod := newObj.(*v1.Pod)
 			// monitor for pods with io.min.disco annotation
 			if pod.Status.PodIP != "" {
-				if labelQuery, ok := pod.ObjectMeta.Annotations[DnsPodLabel]; ok {
+				if labelQuery, ok := pod.ObjectMeta.Annotations[DNSPodLabel]; ok {
 					domain := parseAnnotation(labelQuery, pod)
 					if pod.ObjectMeta.DeletionTimestamp != nil {
 						log.Printf("UDELETE %s (%s)", domain, pod.Status.PodIP)
@@ -129,7 +133,7 @@ func watchPods(clientSet *kubernetes.Clientset) {
 		DeleteFunc: func(obj interface{}) {
 			pod := obj.(*v1.Pod)
 			// monitor for pods with io.min.disco annotation
-			if labelQuery, ok := pod.ObjectMeta.Annotations[DnsPodLabel]; ok {
+			if labelQuery, ok := pod.ObjectMeta.Annotations[DNSPodLabel]; ok {
 				domain := parseAnnotation(labelQuery, pod)
 				log.Printf("DELETE %s (%s)", domain, pod.Status.PodIP)
 				delete(records, domain)
@@ -166,8 +170,15 @@ func parseAnnotation(query string, pod *v1.Pod) string {
 }
 
 func main() {
+	v := flag.Bool("v", false, "prints current disco version")
+	flag.Parse()
+	if *v {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
 	// attach request handler func
-	dns.HandleFunc(".", handleDnsRequest)
+	dns.HandleFunc(".", handleDNSRequest)
 
 	var config *rest.Config
 	if os.Getenv("DEVELOPMENT") != "" {

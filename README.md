@@ -1,5 +1,4 @@
-Disco
-=====
+# Disco
 Disco is a service discovery for MinIO.
 
 The motivation is that some stateful services have the need for a static IP address to discover peers it's peers, Kubernetes offers this functionality however `kube-dns` has a large delay in announcing the new Pods, therefore we propose this layer to act immediately upon the creation of the desired pod.
@@ -113,3 +112,5 @@ Afterwards, restart the coredns pods on the `kube-system` namespace
 $ kubectl -n kube-system delete pod $(kubectl -n kube-system get pods  | grep coredns | awk '{print $1}')
 ```
 
+## License
+Use of `disco` is governed by the AGPLv3 license that can be found in the [LICENSE](./LICENSE) file.
