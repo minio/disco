@@ -94,8 +94,8 @@ func parseDNSQuery(m *dns.Msg) {
 	}
 }
 
-// handleDnsRequest handles DNS queries to Disco
-func handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
+// handleDNSRequest handles DNS queries to Disco
+func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Compress = false
