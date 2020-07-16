@@ -1,0 +1,14 @@
+FROM alpine:latest as alpine
+
+RUN apk add -U --no-cache ca-certificates
+
+FROM scratch
+
+COPY --from=alpine /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+MAINTAINER MinIO Development "dev@min.io"
+EXPOSE 53
+
+COPY disco /disco
+
+ENTRYPOINT ["/disco"]

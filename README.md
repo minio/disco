@@ -136,3 +136,5 @@ Afterwards, restart the coredns pods on the `kube-system` namespace
 $ kubectl -n kube-system delete pod $(kubectl -n kube-system get pods  | grep coredns | awk '{print $1}')
 ```
 
+## License
+Use of `disco` is governed by the AGPLv3 license that can be found in the [LICENSE](./LICENSE) file.

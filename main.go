@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"github.com/miekg/dns"
 	v1 "k8s.io/api/core/v1"
@@ -34,6 +35,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
+
+// version disco version string set with -X main.version=1.0.0
+var version string
 
 // storage of the singleRecords the DNS will server
 var singleRecords = map[string]string{
@@ -219,8 +223,15 @@ func watchSvcs(clientSet *kubernetes.Clientset) {
 }
 
 func main() {
+	v := flag.Bool("v", false, "prints current disco version")
+	flag.Parse()
+	if *v {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
 	// attach request handler func
-	dns.HandleFunc(".", handleDnsRequest)
+	dns.HandleFunc(".", handleDNSRequest)
 
 	var config *rest.Config
 	if os.Getenv("DEVELOPMENT") != "" {
