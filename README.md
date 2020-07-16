@@ -1,10 +1,8 @@
 Disco
 =====
-Disco is a service discovery for MinIO.
+Disco is a Service Discovery and Internal Custom DNS for Kubernetes.
 
-The motivation is that some stateful services have the need for a static IP address to discover peers it's peers, Kubernetes offers this functionality however `kube-dns` has a large delay in announcing the new Pods, therefore we propose this layer to act immediately upon the creation of the desired pod.
-
-Pods are automatically added to the DNS as long at the have the annotation `io.min.disco`. This annotation supports jsonpath expressions.
+It allows to customize Pod and Service discovery by annotating them with an annotation `disco.min.io`, this annotation supports jsonpath expressions, and either adding `Disco` as a DNS service either at cluster level or pod level via `dnsPolicy`
 
 For example, after setting up `Disco` as a service we can configure a new Statefulset to use it to resolve the name of the peer replicas. So if we setup a `MinIO` instance that looks for it's peers at at hostname `zone-1-{0...3}.zone-1` we can indicate this to the `Disco` via the annotation:
 
@@ -28,7 +26,7 @@ spec:
         app: minio
         controller: zone-1
       annotations:
-        io.min.disco: '{.metadata.name}.{.metadata.labels.controller}'
+        disco.min.io: '{.metadata.name}.{.metadata.labels.controller}'
     spec:
       dnsPolicy: "None"
       dnsConfig:
@@ -39,6 +37,31 @@ spec:
           args:
             - server
             - http://zone-1-{0...3}.zone-1/data{1...4}
+```
+
+You could have Disco announce a service by annotating it as well.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: myservice
+  annotations:
+    disco.min.io: mycustom.domain.xyz
+  namespace: default
+spec:
+  clusterIP: 10.0.11.208
+  ports:
+  - name: http-minio
+    port: 9000
+    protocol: TCP
+    targetPort: 9000
+  selector:
+    v1.min.io/instance: bigdata
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
 ```
 
 Deploy

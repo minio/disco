@@ -17,7 +17,7 @@ spec:
         app: minio
         controller: disco-example
       annotations:
-        io.min.disco: '{.metadata.name}.{.metadata.labels.controller}.minio.local'
+        disco.min.io: '{.metadata.name}.{.metadata.labels.controller}.minio.local'
     spec:
       containers:
         - args:

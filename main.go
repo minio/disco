@@ -17,15 +17,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"regexp"
-	"strings"
-
 	"github.com/miekg/dns"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"strings"
 
 	"log"
 	"os"
@@ -36,17 +33,20 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/jsonpath"
 )
 
-// storage of the records the DNS will server
-var records = map[string]string{
+// storage of the singleRecords the DNS will server
+var singleRecords = map[string]string{
 	// this is a domain to validate the presence of Disco
 	"probe.minio.local.": "0.0.0.0",
 }
 
+// storage of the starRecords the DNS will serve, ie: tenant.minio.local, bucket.tenant.minio.local will resolve
+// to the same IP
+var starRecords = map[string]string{}
+
 // pod label
-const DnsPodLabel = "io.min.disco"
+const DiscoAnnotation = "disco.min.io"
 
 // dig instance
 var dig dnsutil.Dig
@@ -56,27 +56,41 @@ func parseDNSQuery(m *dns.Msg) {
 	for _, q := range m.Question {
 		switch q.Qtype {
 		case dns.TypeA:
-			ip := records[q.Name]
+			// Check if we match an exact record
+			ip := singleRecords[q.Name]
 			if ip != "" {
 				rr, err := dns.NewRR(fmt.Sprintf("%s 5 A %s", q.Name, ip))
 				if err == nil {
 					m.Answer = append(m.Answer, rr)
 				}
 				log.Printf("Query for %s ✔\n", q.Name)
-			} else {
-				a, _ := dig.A(q.Name)
-				if len(a) > 0 {
-					rr, err := dns.NewRR(a[0].String())
+				return
+			}
+			// check if the query is a subdomain of a starRecord
+			for domain, ip := range starRecords {
+				if strings.HasSuffix(q.Name, domain) {
+					rr, err := dns.NewRR(fmt.Sprintf("%s 5 A %s", q.Name, ip))
 					if err == nil {
 						m.Answer = append(m.Answer, rr)
 					}
-					log.Printf("Query for %s 📒\n", q.Name)
+					log.Printf("Query for %s ✔\n", q.Name)
+					return
 				}
+			}
+			// if we found no match for this query, forward to kube-dns
+			a, _ := dig.A(q.Name)
+			if len(a) > 0 {
+				rr, err := dns.NewRR(a[0].String())
+				if err == nil {
+					m.Answer = append(m.Answer, rr)
+				}
+				log.Printf("Query for %s 📒\n", q.Name)
 			}
 		}
 	}
 }
 
+// handleDnsRequest handles DNS queries to Disco
 func handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -90,9 +104,10 @@ func handleDnsRequest(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
+// watchPods watches for all the pods being created/updated/deleted
 func watchPods(clientSet *kubernetes.Clientset) {
 	//now listen for  pods
-	log.Println("Starting Disco Informer")
+	log.Println("Starting Disco Pod Informer")
 	// informer factory
 	doneCh := make(chan struct{})
 	factory := informers.NewSharedInformerFactory(clientSet, 0)
@@ -101,38 +116,38 @@ func watchPods(clientSet *kubernetes.Clientset) {
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod := obj.(*v1.Pod)
-			// monitor for pods with io.min.disco annotation
+			// monitor for pods with disco.min.io annotation
 			if pod.Status.PodIP != "" {
-				if labelQuery, ok := pod.ObjectMeta.Annotations[DnsPodLabel]; ok {
-					domain := parseAnnotation(labelQuery, pod)
+				if labelQuery, ok := pod.ObjectMeta.Annotations[DiscoAnnotation]; ok {
+					domain := parsePodAnnotation(labelQuery, pod)
 					log.Printf("ADD %s (%s)", domain, pod.Status.PodIP)
-					records[domain] = pod.Status.PodIP
+					singleRecords[domain] = pod.Status.PodIP
 				}
 			}
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			pod := newObj.(*v1.Pod)
-			// monitor for pods with io.min.disco annotation
+			// monitor for pods with disco.min.io annotation
 			if pod.Status.PodIP != "" {
-				if labelQuery, ok := pod.ObjectMeta.Annotations[DnsPodLabel]; ok {
-					domain := parseAnnotation(labelQuery, pod)
+				if labelQuery, ok := pod.ObjectMeta.Annotations[DiscoAnnotation]; ok {
+					domain := parsePodAnnotation(labelQuery, pod)
 					if pod.ObjectMeta.DeletionTimestamp != nil {
 						log.Printf("UDELETE %s (%s)", domain, pod.Status.PodIP)
-						delete(records, domain)
+						delete(singleRecords, domain)
 					} else {
 						log.Printf("UPDATE %s (%s) - %s - %s", domain, pod.Status.PodIP, pod.Status.Phase, pod.ObjectMeta.DeletionTimestamp)
 					}
-					records[domain] = pod.Status.PodIP
+					singleRecords[domain] = pod.Status.PodIP
 				}
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
 			pod := obj.(*v1.Pod)
-			// monitor for pods with io.min.disco annotation
-			if labelQuery, ok := pod.ObjectMeta.Annotations[DnsPodLabel]; ok {
-				domain := parseAnnotation(labelQuery, pod)
+			// monitor for pods with disco.min.io annotation
+			if labelQuery, ok := pod.ObjectMeta.Annotations[DiscoAnnotation]; ok {
+				domain := parsePodAnnotation(labelQuery, pod)
 				log.Printf("DELETE %s (%s)", domain, pod.Status.PodIP)
-				delete(records, domain)
+				delete(singleRecords, domain)
 			}
 		},
 	})
@@ -140,29 +155,67 @@ func watchPods(clientSet *kubernetes.Clientset) {
 	go podInformer.Run(doneCh)
 	//block until the informer exits
 	<-doneCh
-	log.Println("informer closed")
+	log.Println("pod informer closed")
 }
 
-// parseAnnotation parses the annotation and resolves the jsonspaths in against the pod
-func parseAnnotation(query string, pod *v1.Pod) string {
-	var re = regexp.MustCompile(`(?m)(\{([a-z._-]+)\})`)
-	for _, match := range re.FindAllStringSubmatch(query, -1) {
-		jPathExpr := match[0]
-		jPath := jsonpath.New("ok")
-		err := jPath.Parse(jPathExpr)
-		if err != nil {
-			continue
-		}
-		buf := new(bytes.Buffer)
-		err = jPath.Execute(buf, pod)
-		if err != nil {
-			continue
-		}
-		out := buf.String()
-		query = strings.Replace(query, match[0], out, -1)
-	}
-	domain := fmt.Sprintf("%s.", query)
-	return domain
+// watchSvcs waches for all the services being created/updated/deleted
+func watchSvcs(clientSet *kubernetes.Clientset) {
+	//now listen for  pods
+	log.Println("Starting Disco Service Informer")
+	// informer factory
+	doneCh := make(chan struct{})
+	factory := informers.NewSharedInformerFactory(clientSet, 0)
+
+	svcInformer := factory.Core().V1().Services().Informer()
+	svcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			svc := obj.(*v1.Service)
+			// wait for the svc to have a clusterIP
+			if svc.Spec.ClusterIP != "" {
+				// monitor for services with disco.min.io annotation
+				if labelQuery, ok := svc.ObjectMeta.Annotations[DiscoAnnotation]; ok {
+					domain := parseSvcAnnotation(labelQuery, svc)
+					log.Printf("ADD SVC %s (%s)", domain, svc.Spec.ClusterIP)
+					singleRecords[domain] = svc.Spec.ClusterIP
+					starRecords[domain] = svc.Spec.ClusterIP
+				}
+			}
+
+		},
+		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
+			svc := newObj.(*v1.Service)
+			// wait for the svc to have a clusterIP
+			if svc.Spec.ClusterIP != "" {
+				// monitor for pods with disco.min.io annotation
+				if labelQuery, ok := svc.ObjectMeta.Annotations[DiscoAnnotation]; ok {
+					domain := parseSvcAnnotation(labelQuery, svc)
+					if svc.ObjectMeta.DeletionTimestamp != nil {
+						log.Printf("UDELETE SVC %s (%s)", domain, svc.Spec.ClusterIP)
+						delete(singleRecords, domain)
+					} else {
+						log.Printf("UPDATE SVC %s (%s) - %s", domain, svc.Spec.ClusterIP, svc.ObjectMeta.DeletionTimestamp)
+					}
+					singleRecords[domain] = svc.Spec.ClusterIP
+					starRecords[domain] = svc.Spec.ClusterIP
+				}
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			svc := obj.(*v1.Service)
+			// monitor for pods with disco.min.io annotation
+			if labelQuery, ok := svc.ObjectMeta.Annotations[DiscoAnnotation]; ok {
+				domain := parseSvcAnnotation(labelQuery, svc)
+				log.Printf("DELETE SVC %s (%s)", domain, svc.Spec.ClusterIP)
+				delete(singleRecords, domain)
+				delete(starRecords, domain)
+			}
+		},
+	})
+
+	go svcInformer.Run(doneCh)
+	//block until the informer exits
+	<-doneCh
+	log.Println("service informer closed")
 }
 
 func main() {
@@ -200,10 +253,18 @@ func main() {
 	dig.SetDNS(svc.Spec.ClusterIP)
 
 	// start server
-	port := 53
+	portStr := os.Getenv("DISCO_PORT")
+	if portStr == "" {
+		portStr = "53"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(err)
+	}
 	server := &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "udp"}
 	log.Printf("Starting at %d\n", port)
 	go watchPods(clientSet)
+	go watchSvcs(clientSet)
 	err = server.ListenAndServe()
 	defer server.Shutdown()
 	if err != nil {
